@@ -635,7 +635,7 @@ func (a *App) emit(name string, payload any) {
 
 // appDataDirName is the one folder this app owns. Named rather than repeated so
 // the reset can check it is deleting that and nothing else.
-const appDataDirName = "WhiteVPN Desktop"
+const appDataDirName = "amhVPN"
 
 func appConfigDir() (string, error) {
 	base, err := os.UserConfigDir()
