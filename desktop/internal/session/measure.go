@@ -158,6 +158,22 @@ func (m *Measurer) Delay(ctx context.Context, node string, testURL string, timeo
 	return m.process.TestDelayMS(ctx, node, testURL, int(timeout/time.Millisecond))
 }
 
+// ProbeHTTP selects one node and completes the same real HTTP health request
+// the connection path uses through this measurer's local proxy. It is intended
+// for offline validation tools; it never changes a running user session.
+func (m *Measurer) ProbeHTTP(ctx context.Context, node string) (int, error) {
+	selectCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	err := m.process.ChangeProxy(selectCtx, mihomoconf.SelectGroup, node)
+	cancel()
+	if err != nil {
+		return 0, fmt.Errorf("select %q: %w", node, err)
+	}
+	if code := probeStatus(ctx, m.mixedPort); healthy(code) {
+		return code, nil
+	}
+	return 0, fmt.Errorf("no HTTP request completed through %q", node)
+}
+
 // Speed measures one node by downloading through it, in bytes per second.
 //
 // Unlike delay, this cannot be done concurrently across nodes: the engine has

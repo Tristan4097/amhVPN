@@ -1,0 +1,7 @@
+# One public subscription URL per line. Keep this list reviewable and remove
+# sources that repeatedly yield dead or malicious configurations.
+https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/top100.txt
+https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/verified/configs.txt
+https://raw.githubusercontent.com/mehrtat/vless-collector/main/vless.txt
+https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/mini.txt
+https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/best.txt
