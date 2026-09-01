@@ -1,0 +1,98 @@
+# macOS / Windows local files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editor / IDE state
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.local
+*.secret
+secrets/
+credentials/
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.csr
+*.mobileprovision
+*.keystore
+*.jks
+id_rsa*
+id_ed25519*
+
+# Logs and diagnostics
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+coverage/
+coverage.out
+*.prof
+*.trace
+
+# Go / Wails build output. The icons under build/ are not output: tray.go
+# embeds two of them, so a checkout without them does not compile at all.
+build/*
+!build/appicon.icns
+!build/appicon.png
+!build/appicon-source.png
+!build/windows/
+build/windows/*
+!build/windows/wails.exe.manifest
+!build/windows/icon.ico
+!build/windows/info.json
+.cache/
+bin/
+dist/
+*.test
+*.out
+go.work
+go.work.sum
+
+# Runtime cores and client binaries/config
+clients/*
+!clients/.keep
+cores/*
+!cores/.keep
+# The engine is built from source; wintun is a redistributable it loads at
+# runtime and cannot build, so it travels with the repo or Windows TUN has
+# nothing to create an adapter with on a fresh checkout.
+!cores/wintun.dll
+
+# Engine source fetched by scripts/setup-mihomo-core.sh. Deliberately not
+# committed: it is large, it is regenerable from pinned refs, and vendoring it
+# would hide the fact that the FlClash commit has to be re-applied on every bump.
+third_party/
+
+# Frontend dependencies and generated output
+frontend/node_modules/
+frontend/dist/
+frontend/wailsjs/
+frontend/.vite/
+frontend/package.json.md5
+
+# Packaged release artifacts
+*.dmg
+*.pkg
+*.msi
+*.exe
+*.deb
+*.rpm
+*.AppImage
+*.zip
+*.tar.gz
+*.tgz
+*.7z
+*.sha256
