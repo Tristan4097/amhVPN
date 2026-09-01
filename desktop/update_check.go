@@ -32,7 +32,7 @@ const (
 	// The releases API, unauthenticated. Sixty requests an hour per address,
 	// which is why the result is cached rather than fetched whenever something
 	// asks.
-	latestReleaseURL = "https://api.github.com/repos/WhiteDNS/WhiteVPN-Desktop/releases/latest"
+	latestReleaseURL = "https://api.github.com/repos/Tristan4097/amhVPN/releases/latest"
 
 	updateCheckInterval = 6 * time.Hour
 	updateCheckTimeout  = 12 * time.Second
@@ -157,7 +157,7 @@ func requestLatestReleaseFrom(ctx context.Context, client *http.Client, releaseU
 		return githubRelease{}, err
 	}
 	request.Header.Set("Accept", "application/vnd.github+json")
-	request.Header.Set("User-Agent", "WhiteVPN-Desktop")
+	request.Header.Set("User-Agent", "amhVPN")
 
 	response, err := client.Do(request)
 	if err != nil {
