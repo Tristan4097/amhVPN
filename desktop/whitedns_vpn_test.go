@@ -1,12 +1,9 @@
 package main
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -15,35 +12,6 @@ import (
 	"whitevpn-desktop/internal/model"
 	"whitevpn-desktop/internal/profiles"
 )
-
-func TestDecryptWhiteDNSVPNSubscription(t *testing.T) {
-	plaintext := base64.StdEncoding.EncodeToString([]byte(testV2RaySubscriptionLink("encrypted")))
-	encrypted := encryptWhiteDNSVPNTestPayload(t, plaintext)
-
-	decrypted, err := decryptWhiteDNSVPNSubscription(encrypted, testCatalogueKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if decrypted != plaintext {
-		t.Fatal("decrypted subscription did not match plaintext")
-	}
-}
-
-func TestDecryptWhiteDNSVPNFrontingIPList(t *testing.T) {
-	encrypted := encryptWhiteDNSVPNTestPayloadWithKey(t, `["203.0.113.10","bad","203.0.113.10","198.51.100.20"]`, testCatalogueKey)
-
-	decrypted, err := decryptWhiteDNSVPNIPList(encrypted, testCatalogueKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ips, err := parseWhiteDNSVPNFrontingIPs(decrypted)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(ips) != 2 || ips[0] != "203.0.113.10" || ips[1] != "198.51.100.20" {
-		t.Fatalf("unexpected parsed IPs: %#v", ips)
-	}
-}
 
 func TestParseWhiteDNSVPNCustomFrontingIPs(t *testing.T) {
 	ips, err := parseWhiteDNSVPNCustomFrontingIPs(" 104.16.0.10,104.16.0.11,104.16.0.10 ")
@@ -62,47 +30,6 @@ func TestParseWhiteDNSVPNCustomFrontingIPs(t *testing.T) {
 	if _, err := parseWhiteDNSVPNCustomFrontingIPs("104.16.0.1,104.16.0.2,104.16.0.3,104.16.0.4,104.16.0.5,104.16.0.6,104.16.0.7,104.16.0.8,104.16.0.9,104.16.0.10,104.16.0.11"); err == nil {
 		t.Fatal("expected more than ten IPs to be rejected")
 	}
-}
-
-// testCatalogueKey is what these tests encrypt and decrypt with.
-//
-// Deliberately not the real key. These tests are about the crypto, not about any
-// particular passphrase, and one that reaches for the production value breaks
-// the moment that value stops being a compile-time constant — which is exactly
-// what happened when it moved out of the source and into the build.
-const testCatalogueKey = "test-passphrase-not-the-real-one"
-
-func encryptWhiteDNSVPNTestPayload(t *testing.T, plaintext string) string {
-	t.Helper()
-	return encryptWhiteDNSVPNTestPayloadWithKey(t, plaintext, testCatalogueKey)
-}
-
-func encryptWhiteDNSVPNTestPayloadWithKey(t *testing.T, plaintext string, keyText string) string {
-	t.Helper()
-	key := sha256.Sum256([]byte(keyText))
-	block, err := aes.NewCipher(key[:])
-	if err != nil {
-		t.Fatal(err)
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		t.Fatal(err)
-	}
-	nonce := []byte("123456789012")
-	if len(nonce) != gcm.NonceSize() {
-		t.Fatal("test nonce size mismatch")
-	}
-	payload, err := json.Marshal(whiteDNSVPNEncryptedPayload{
-		Version:    1,
-		Algorithm:  "AES-GCM",
-		Encoding:   "base64url",
-		IV:         base64.RawURLEncoding.EncodeToString(nonce),
-		Ciphertext: base64.RawURLEncoding.EncodeToString(gcm.Seal(nil, nonce, []byte(plaintext), nil)),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(payload)
 }
 
 func testWhiteDNSVPNFrontingProfile() model.V2RayProfile {
@@ -174,6 +101,9 @@ func TestFirstLaunchListsTheCatalogue(t *testing.T) {
 	if listed[0].ID != whiteDNSVPNSubscriptionID {
 		t.Fatalf("the listed subscription is not the catalogue: %#v", listed[0])
 	}
+	if listed[0].Name != "amhVPN" {
+		t.Fatalf("expected built-in display name amhvpn, got %q", listed[0].Name)
+	}
 	// Listing it must not start storing its address; see the test below.
 	if listed[0].URL != "" {
 		t.Fatalf("the catalogue's address was stored: %q", listed[0].URL)
@@ -181,13 +111,6 @@ func TestFirstLaunchListsTheCatalogue(t *testing.T) {
 }
 
 func TestBuiltInCatalogueAddressNeverEntersState(t *testing.T) {
-	// The address is injected at link time and empty in a test binary, and
-	// `strings.Contains(anything, "")` is true — so without a stand-in this test
-	// passes or fails for reasons that have nothing to do with what it checks.
-	restore := whiteDNSVPNSubscriptionURL
-	whiteDNSVPNSubscriptionURL = "https://catalogue.invalid/encrypted"
-	defer func() { whiteDNSVPNSubscriptionURL = restore }()
-
 	app := &App{state: model.DefaultAppState()}
 	app.mu.Lock()
 	idx := app.ensureWhiteDNSVPNSubscriptionLocked()
@@ -204,7 +127,7 @@ func TestBuiltInCatalogueAddressNeverEntersState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(raw), whiteDNSVPNSubscriptionURL) {
+	if strings.Contains(string(raw), amhVPNSubscriptionURL) {
 		t.Fatal("the catalogue address is reachable through the serialised state")
 	}
 }
@@ -213,7 +136,7 @@ func TestBuiltInCatalogueAddressNeverEntersState(t *testing.T) {
 func TestForgetBuiltInSubscriptionURLClearsAnOlderState(t *testing.T) {
 	state := model.DefaultAppState()
 	state.V2RaySubscriptions = []model.V2RaySubscription{
-		{ID: whiteDNSVPNSubscriptionID, Name: whiteDNSVPNSubscriptionName, URL: whiteDNSVPNSubscriptionURL},
+		{ID: whiteDNSVPNSubscriptionID, Name: whiteDNSVPNSubscriptionName, URL: amhVPNSubscriptionURL},
 		{ID: "user-1", Name: "Mine", URL: "https://example.com/sub"},
 	}
 
@@ -224,6 +147,58 @@ func TestForgetBuiltInSubscriptionURLClearsAnOlderState(t *testing.T) {
 	}
 	if next.V2RaySubscriptions[1].URL != "https://example.com/sub" {
 		t.Fatalf("a subscription the user added is theirs and must be left alone, got %q", next.V2RaySubscriptions[1].URL)
+	}
+}
+
+func TestBuiltInSubscriptionFetchesPlainLinksAndRefreshes(t *testing.T) {
+	plain := testV2RaySubscriptionLink("amhvpn")
+	fetches := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fetches++
+		_, _ = w.Write([]byte(plain))
+	}))
+	defer server.Close()
+
+	restore := amhVPNSubscriptionURL
+	amhVPNSubscriptionURL = server.URL
+	defer func() { amhVPNSubscriptionURL = restore }()
+
+	app := testV2RaySubscriptionApp(t)
+	app.mu.Lock()
+	app.ensureWhiteDNSVPNSubscriptionLocked()
+	app.state.V2RayProfiles = append(app.state.V2RayProfiles, duplicateTestV2RayProfile("manual", "Manual"))
+	app.state.V2RaySubscriptions = append(app.state.V2RaySubscriptions, model.V2RaySubscription{ID: "user-sub", Name: "User", URL: "https://example.com/sub"})
+	app.mu.Unlock()
+
+	body, err := app.subscriptionBodyFor(t.Context(), model.BuiltInSubscriptionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body != plain {
+		t.Fatalf("built-in body was changed instead of passed to the parser: %q", body)
+	}
+	if nodes, err := whiteVPNNodesFromSubscription(body); err != nil || len(nodes) != 1 {
+		t.Fatalf("plain built-in subscription did not parse: nodes=%#v err=%v", nodes, err)
+	}
+
+	result, err := app.RefreshV2RaySubscription(model.BuiltInSubscriptionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.OK || result.Imported != 1 || result.Subscription.ImportedCount != 1 || result.Subscription.LastUpdatedAt == "" || result.Subscription.LastError != "" {
+		t.Fatalf("unexpected built-in refresh result: %#v", result)
+	}
+	if fetches != 2 {
+		t.Fatalf("expected the built-in URL to be fetched for each request, got %d fetches", fetches)
+	}
+	if result.Subscription.ID != model.BuiltInSubscriptionID || result.Subscription.Name != "amhVPN" || result.Subscription.URL != "" {
+		t.Fatalf("unexpected built-in subscription after refresh: %#v", result.Subscription)
+	}
+	if !containsV2RayProfile(result.State.V2RayProfiles, "manual") {
+		t.Fatalf("built-in refresh changed a manual profile: %#v", result.State.V2RayProfiles)
+	}
+	if user, ok := findV2RaySubscription(result.State, "user-sub"); !ok || user.URL != "https://example.com/sub" {
+		t.Fatalf("built-in refresh changed a user subscription: %#v", result.State.V2RaySubscriptions)
 	}
 }
 

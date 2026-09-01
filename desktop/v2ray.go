@@ -210,9 +210,8 @@ func (a *App) SaveV2RaySubscription(subscription model.V2RaySubscription) (model
 func (a *App) RefreshV2RaySubscription(id string) (model.V2RaySubscriptionRefreshResult, error) {
 	id = strings.TrimSpace(id)
 	if id == whiteDNSVPNSubscriptionID {
-		// The catalogue is fetched from an address this app holds as a constant
-		// and arrives encrypted, so neither the address nor the parsing below
-		// applies to it.
+		// The built-in subscription is fetched from the fixed public URL and
+		// parsed into the node catalogue, rather than imported as stored profiles.
 		return a.refreshWhiteDNSVPNCatalogue()
 	}
 	a.mu.Lock()

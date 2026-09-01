@@ -2,12 +2,8 @@ package main
 
 import (
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net"
 	"slices"
@@ -21,7 +17,7 @@ import (
 
 const (
 	whiteDNSVPNSubscriptionID              = model.BuiltInSubscriptionID
-	whiteDNSVPNSubscriptionName            = "WhiteDNS VPN"
+	whiteDNSVPNSubscriptionName            = "amhVPN"
 	whiteDNSVPNSubscriptionRefreshInterval = 3 * time.Hour
 
 	whiteDNSVPNFrontingPingLimit       = 96
@@ -30,61 +26,15 @@ const (
 	whiteDNSVPNStartupWorkingSample    = 5
 )
 
-// Where the built-in catalogue comes from, and the key that opens it. Both are
-// set at link time by the Makefile:
-//
-//	-X main.whiteDNSVPNSubscriptionURL=... -X main.whiteDNSVPNSubscriptionKey=...
-//
-// They used to be constants in this file, which is in a public repository, and
-// had been since its first commit. That is not a weak secret — it is not a
-// secret at all: anyone could read the key off a web page, fetch the encrypted
-// catalogue and decrypt it, and what falls out is every node's address, UUID,
-// password and REALITY keys. No binary needed, nothing to reverse engineer. A
-// censor gets the complete list to block; anyone else gets the service for free.
-//
-// Moving them here does not make them secret either, and it must not be sold as
-// though it does. They still travel inside every binary that ships, and a client
-// that can decrypt the catalogue is a client an attacker can take apart. What it
-// changes is the effort: reading a public file becomes pulling strings out of a
-// 74 MB executable. That is worth doing, and it is the most that can be done
-// while the client holds the key at all.
-//
-// The old values remain in this repository's history for ever, so this is only
-// worth anything once the key on the server has been changed.
-//
-// A build made without them — `go build`, `wails build`, or anyone building from
-// source — has no catalogue and says so. Manual configs and a user's own
-// subscriptions are unaffected, which is the right shape for an open-source
-// client of a managed service.
-var (
-	whiteDNSVPNSubscriptionURL string
-	whiteDNSVPNSubscriptionKey string
-)
-
-// errNoBuiltInCatalogue is what a build without the catalogue credentials says
-// when something asks for them.
-var errNoBuiltInCatalogue = errors.New(
-	"this build has no WhiteDNS catalogue: it was not built with one. Add a subscription of your own, or paste configs on the Servers page")
-
-// builtInCatalogueAvailable reports whether this build can reach the catalogue
-// at all.
-func builtInCatalogueAvailable() bool {
-	return strings.TrimSpace(whiteDNSVPNSubscriptionURL) != "" &&
-		strings.TrimSpace(whiteDNSVPNSubscriptionKey) != ""
-}
+// The built-in subscription is public plain-text share links. It is deliberately
+// held in code rather than persisted in the user's state, so an older state file
+// cannot replace it or make a built-in source look like a personal subscription.
+var amhVPNSubscriptionURL = "https://amhvpn.amirhasrati.workers.dev/sub"
 
 type whiteDNSVPNSubscriptionFetcher func(context.Context) (string, error)
 type whiteDNSVPNFrontingIPFetcher func(context.Context) (string, error)
 type whiteDNSVPNFrontingRanker func(context.Context, model.V2RayProfile, []string) []string
 type whiteDNSVPNFrontingValidator func(context.Context, model.V2RayProfile) model.V2RayPingResult
-
-type whiteDNSVPNEncryptedPayload struct {
-	Version    int    `json:"version"`
-	Algorithm  string `json:"algorithm"`
-	Encoding   string `json:"encoding"`
-	IV         string `json:"iv"`
-	Ciphertext string `json:"ciphertext"`
-}
 
 type whiteDNSVPNRuntimeSelection struct {
 	storedProfile  model.V2RayProfile
@@ -98,10 +48,7 @@ type whiteDNSVPNStartupExclusion struct {
 }
 
 func fetchWhiteDNSVPNSubscriptionDocument(ctx context.Context) (string, error) {
-	if !builtInCatalogueAvailable() {
-		return "", errNoBuiltInCatalogue
-	}
-	body, err := fetchV2RaySubscriptionDocument(ctx, whiteDNSVPNSubscriptionURL)
+	body, err := fetchV2RaySubscriptionDocument(ctx, amhVPNSubscriptionURL)
 	if err == nil {
 		return body, nil
 	}
@@ -112,7 +59,7 @@ func fetchWhiteDNSVPNSubscriptionDocument(ctx context.Context) (string, error) {
 	// app with no node list, which is to say no app at all.
 	if looksLikeInterference(err) {
 		if fragmented := fragmentedDirectClient(false); fragmented != nil {
-			if body, retryErr := fetchV2RaySubscriptionDocumentWith(ctx, whiteDNSVPNSubscriptionURL, fragmented); retryErr == nil {
+			if body, retryErr := fetchV2RaySubscriptionDocumentWith(ctx, amhVPNSubscriptionURL, fragmented); retryErr == nil {
 				return body, nil
 			}
 		}
@@ -236,13 +183,9 @@ func (a *App) subscriptionBodyFor(ctx context.Context, id string) (string, error
 		return body, nil
 	}
 	if id == whiteDNSVPNSubscriptionID {
-		raw, err := fetchWhiteDNSVPNSubscriptionDocument(ctx)
+		body, err := fetchWhiteDNSVPNSubscriptionDocument(ctx)
 		if err != nil {
 			return "", fmt.Errorf("subscription unavailable: %w", err)
-		}
-		body, err := decryptWhiteDNSVPNSubscription(raw, whiteDNSVPNSubscriptionKey)
-		if err != nil {
-			return "", fmt.Errorf("subscription unreadable: %w", err)
 		}
 		return body, nil
 	}
@@ -258,52 +201,6 @@ func (a *App) subscriptionBodyFor(ctx context.Context, id string) (string, error
 		return "", fmt.Errorf("subscription unavailable: %w", err)
 	}
 	return body, nil
-}
-
-func decryptWhiteDNSVPNSubscription(rawText string, passphrase string) (string, error) {
-	return decryptWhiteDNSVPNPayload(rawText, passphrase, "subscription")
-}
-
-func decryptWhiteDNSVPNIPList(rawText string, passphrase string) (string, error) {
-	return decryptWhiteDNSVPNPayload(rawText, passphrase, "IP list")
-}
-
-func decryptWhiteDNSVPNPayload(rawText string, passphrase string, label string) (string, error) {
-	var payload whiteDNSVPNEncryptedPayload
-	if err := json.Unmarshal([]byte(strings.TrimSpace(rawText)), &payload); err != nil {
-		return "", err
-	}
-	if payload.Version != 1 {
-		return "", fmt.Errorf("unsupported WhiteDNS VPN %s version", label)
-	}
-	if payload.Algorithm != "AES-GCM" {
-		return "", fmt.Errorf("unsupported WhiteDNS VPN %s algorithm", label)
-	}
-	if payload.Encoding != "base64url" {
-		return "", fmt.Errorf("unsupported WhiteDNS VPN %s encoding", label)
-	}
-	iv, err := decodeWhiteDNSVPNBase64URL(payload.IV)
-	if err != nil {
-		return "", fmt.Errorf("invalid WhiteDNS VPN %s iv: %w", label, err)
-	}
-	ciphertext, err := decodeWhiteDNSVPNBase64URL(payload.Ciphertext)
-	if err != nil {
-		return "", fmt.Errorf("invalid WhiteDNS VPN %s ciphertext: %w", label, err)
-	}
-	key := sha256.Sum256([]byte(passphrase))
-	block, err := aes.NewCipher(key[:])
-	if err != nil {
-		return "", err
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", err
-	}
-	plaintext, err := gcm.Open(nil, iv, ciphertext, nil)
-	if err != nil {
-		return "", fmt.Errorf("unable to decrypt WhiteDNS VPN %s: %w", label, err)
-	}
-	return string(plaintext), nil
 }
 
 func parseWhiteDNSVPNFrontingIPs(rawText string) ([]string, error) {
@@ -455,9 +352,9 @@ func (a *App) ensureWhiteDNSVPNSubscriptionLocked() int {
 
 // refreshWhiteDNSVPNCatalogue re-fetches the built-in catalogue on demand.
 //
-// The generic subscription refresh cannot do this one: it fetches whatever
-// address is stored, and this one has none stored, arrives encrypted, and is
-// counted in nodes rather than in stored profiles.
+// The generic subscription refresh cannot do this one: it fetches an address
+// stored in state, while this built-in source has a fixed address and is counted
+// in nodes rather than in stored profiles.
 func (a *App) refreshWhiteDNSVPNCatalogue() (model.V2RaySubscriptionRefreshResult, error) {
 	list, err := a.ListWhiteVPNNodes(true)
 	if err != nil {

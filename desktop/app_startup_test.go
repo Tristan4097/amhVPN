@@ -15,7 +15,7 @@ func TestNewAppEnsuresAppDataWritableBeforeStateLoad(t *testing.T) {
 	called := false
 	ensureAppDataWritable = func(_ context.Context, dir string) error {
 		called = true
-		if filepath.Base(dir) != "WhiteVPN Desktop" {
+		if filepath.Base(dir) != appDataDirName {
 			t.Fatalf("unexpected app data directory: %q", dir)
 		}
 		return sentinel

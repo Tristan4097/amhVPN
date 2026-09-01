@@ -12,7 +12,7 @@ import (
 
 func TestEnsureAppDataWritableSkipsRepairWhenWritable(t *testing.T) {
 	runner := &fakeRunner{}
-	err := EnsureAppDataWritableWithOptions(context.Background(), filepath.Join(t.TempDir(), "WhiteVPN Desktop"), Options{
+	err := EnsureAppDataWritableWithOptions(context.Background(), filepath.Join(t.TempDir(), appDataDirectoryName), Options{
 		Platform: "darwin",
 		Runner:   runner.run,
 		Probe:    func(string) error { return nil },
@@ -38,7 +38,7 @@ func TestEnsureAppDataWritableRepairsDarwinWithAdministratorPrompt(t *testing.T)
 		t.Skip("the macOS repair command can only be checked on a host with POSIX paths")
 	}
 	runner := &fakeRunner{}
-	dir := filepath.Join(t.TempDir(), "WhiteVPN Desktop")
+	dir := filepath.Join(t.TempDir(), appDataDirectoryName)
 
 	err := EnsureAppDataWritableWithOptions(context.Background(), dir, Options{
 		Platform: "darwin",
@@ -60,7 +60,7 @@ func TestEnsureAppDataWritableRepairsDarwinWithAdministratorPrompt(t *testing.T)
 
 func TestEnsureAppDataWritableRepairsLinuxWithPkexec(t *testing.T) {
 	runner := &fakeRunner{}
-	dir := filepath.Join(t.TempDir(), "WhiteVPN Desktop")
+	dir := filepath.Join(t.TempDir(), appDataDirectoryName)
 
 	err := EnsureAppDataWritableWithOptions(context.Background(), dir, Options{
 		Platform: "linux",
@@ -82,7 +82,7 @@ func TestEnsureAppDataWritableRepairsLinuxWithPkexec(t *testing.T) {
 
 func TestEnsureAppDataWritableReportsMissingPkexec(t *testing.T) {
 	runner := &fakeRunner{err: exec.ErrNotFound}
-	dir := filepath.Join(t.TempDir(), "WhiteVPN Desktop")
+	dir := filepath.Join(t.TempDir(), appDataDirectoryName)
 
 	err := EnsureAppDataWritableWithOptions(context.Background(), dir, Options{
 		Platform: "linux",
@@ -98,7 +98,7 @@ func TestEnsureAppDataWritableReportsMissingPkexec(t *testing.T) {
 
 func TestEnsureAppDataWritableRepairsWindowsWithUACAndSID(t *testing.T) {
 	runner := &fakeRunner{}
-	dir := filepath.Join(t.TempDir(), "WhiteVPN Desktop")
+	dir := filepath.Join(t.TempDir(), appDataDirectoryName)
 
 	err := EnsureAppDataWritableWithOptions(context.Background(), dir, Options{
 		Platform: "windows",
@@ -117,7 +117,7 @@ func TestEnsureAppDataWritableRepairsWindowsWithUACAndSID(t *testing.T) {
 	}
 }
 
-func TestEnsureAppDataWritableRefusesNonWhiteDNSDirectory(t *testing.T) {
+func TestEnsureAppDataWritableRefusesNonAmhVPNDirectory(t *testing.T) {
 	runner := &fakeRunner{}
 	err := EnsureAppDataWritableWithOptions(context.Background(), filepath.Join(t.TempDir(), "Other App"), Options{
 		Platform: "darwin",
@@ -126,7 +126,7 @@ func TestEnsureAppDataWritableRefusesNonWhiteDNSDirectory(t *testing.T) {
 		UserID:   "501",
 		GroupID:  "20",
 	})
-	if err == nil || !strings.Contains(err.Error(), "refusing to repair non-WhiteDNS data directory") {
+	if err == nil || !strings.Contains(err.Error(), "refusing to repair non-amhVPN data directory") {
 		t.Fatalf("expected refusal error, got %v", err)
 	}
 	if len(runner.calls) != 0 {
@@ -136,7 +136,7 @@ func TestEnsureAppDataWritableRefusesNonWhiteDNSDirectory(t *testing.T) {
 
 func TestEnsureAppDataWritableReportsStillUnwritableAfterRepair(t *testing.T) {
 	runner := &fakeRunner{}
-	dir := filepath.Join(t.TempDir(), "WhiteVPN Desktop")
+	dir := filepath.Join(t.TempDir(), appDataDirectoryName)
 
 	err := EnsureAppDataWritableWithOptions(context.Background(), dir, Options{
 		Platform: "darwin",
